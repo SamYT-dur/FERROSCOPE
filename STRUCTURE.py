@@ -4,6 +4,7 @@ import sys
 import math
 import os
 import glob
+import stopit
 
 from ccdc.io import CrystalReader
 from ccdc.io import CrystalWriter
@@ -32,7 +33,7 @@ def bond_type_as_index(type):
     if type == Bond.BondType(4):  # quadruple
         return 4
     if type == Bond.BondType(5):  # aromatic
-        return 5 
+        return 5
     if type == Bond.BondType(7):  # delocalised
         return 7
     return 9  # pi bond
@@ -50,7 +51,7 @@ def calculate_next_level(molecule,current_level, strrep):
                      #print(batom.index)
                      sum = sum + current_level[batom.index]
 
-        
+
         strrep[atom.index] = str(strrep[atom.index]) + "_" + str(sum)
         level[atom.index] = sum
     return level,strrep
@@ -62,7 +63,7 @@ so that they do not get assigned to the same groups during the partitions"""
     level = [ 0 for atom in molecule.atoms ]
     strrep = [ "" for atom in molecule.atoms ]
     for atom in molecule.atoms:
-        sum = atom.atomic_number 
+        sum = atom.atomic_number
         for bond in atom.bonds:
             sum = sum
                   # + math.pow(10,bond_type_as_index(bond.bond_type) + 2)  # comment this out so we ignore bonding in deciding equivalence
@@ -74,13 +75,13 @@ so that they do not get assigned to the same groups during the partitions"""
 def calculate_indexes(molecule):
 
     group_by_index = {}
-    
+
     level,strrep = calculate_initial_indexes(molecule)
-    
+
     n_partitions = len(set(strrep))  # finds the number of unique elements in strrep, Ng in the paper
 
     next_level,strrep = calculate_next_level(molecule,level,strrep)
-    
+
     while len(set(strrep)) > n_partitions:  # iterates until the number of groups stops increasing
         n_partitions = len(set(strrep))
         next_level,strrep = calculate_next_level(molecule,next_level,strrep)
@@ -109,17 +110,49 @@ def output_crystal(identifier):
     num_simplified = 0
 
     # Options decided in MASTER.py
-    if excluded:
+    if excluded_check:
         molecule = TOOLS.exclude(molecule,excluded,replace_type_by_c)  # exclude and replace atoms
-    # inertial moved before dabco as inertial depends on identifier which can be messed up by dabco
+
+    if centroids:
+        with stopit.ThreadingTimeout(10) as to_ctx_mgr:
+            molecule, note, num_simplified = TOOLS.centroids(molecule, note, num_simplified)  # Sam's second attempt at simplification of small organics using moment of inertia
+        if to_ctx_mgr.state == to_ctx_mgr.EXECUTED:
+            pass
+        elif to_ctx_mgr.state == to_ctx_mgr.TIMED_OUT:
+            with open('timeout.txt', 'a+') as outfile:
+                outfile.write(molecule.identifier + ' centroids error ' + '\n')
+            print("Didn't finish")
+
     if sphericity:
-        molecule, note, num_simplified = TOOLS.simplify_small_organics_inertial(molecule, note,num_simplified)  # Sam's second attempt at simplification of small organics using moment of inertia
+        with stopit.ThreadingTimeout(10) as to_ctx_mgr:
+            molecule, note, num_simplified = TOOLS.simplify_small_organics_inertial(molecule, note,num_simplified)  # Sam's second attempt at simplification of small organics using moment of inertia
+        if to_ctx_mgr.state == to_ctx_mgr.EXECUTED:
+            pass
+        elif to_ctx_mgr.state == to_ctx_mgr.TIMED_OUT:
+            with open('timeout.txt', 'a+') as outfile:
+                outfile.write(molecule.identifier + ' sphericity error ' + '\n')
+            print("Didn't finish")
+
     # molecule, note, num_simplified = TOOLS.simplify_dabco(molecule, note, num_simplified)  # Sam dabco simplification
     # molecule, note, num_simplified = TOOLS.simplify_crown(molecule, note, num_simplified)  # Sam 18-crown-6 simplification
     if MeCyclo:
         molecule, note, num_simplified = TOOLS.simplify_MeCyclo(molecule, note, num_simplified)  # Sam MeC5 simplification
+
     if m_x_bonds:
-        molecule, note = TOOLS.m_x_test(molecule, crystal, note)  # Sam's routine for extending metal-halide bonds
+        with stopit.ThreadingTimeout(10) as to_ctx_mgr2: # timeout if takes longer than 10 secs to prevent bloating the program time
+            #assert to_ctx_mgr.state == to_ctx_mgr_EXECUTING
+            #try:
+            molecule, note = TOOLS.m_x_test(molecule, crystal, note)  # Sam's routine for extending metal-halide bonds
+            #except Exception as e:
+            #    with open('errors.txt', 'a+') as outfile:
+            #        outfile.write(str(molecule.identifier) + ' : STRUCTURE.m_x: ' + str(e) + '\n')
+            #    pass
+        if to_ctx_mgr2.state == to_ctx_mgr2.EXECUTED:
+            pass
+        elif to_ctx_mgr2.state == to_ctx_mgr2.TIMED_OUT:
+            with open('timeout.txt', 'a+') as outfile:
+                outfile.write(molecule.identifier + ' M-X error ' + '\n')
+            print("Didn't finish")
     if tds:
         molecule, note = TOOLS.sam_Abn_A(molecule, crystal, ABn_list, note)  # sam's replacement for replace_ABn_A #operating on the asym unit does miss a couple entries but not worrying about that for now
 
@@ -132,7 +165,6 @@ def output_crystal(identifier):
 
 # this bit here does the topology atom relabelling
 
-# Sam - a lot of this stuff still baffles me, I have left it alone as much as possible.
     if topology_relabel:
         indexes, strrep = calculate_indexes(molecule)
         lookup = []
@@ -151,7 +183,7 @@ def output_crystal(identifier):
             new_atoms[ordered[1]] = atom
 
     crystal.molecule = molecule
-    return crystal  # This is all we need when not running through Mercury
+    return crystal
 
 if __name__ == '__main__':
     #id = input('Enter an entry ID from the CSD:')
