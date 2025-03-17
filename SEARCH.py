@@ -69,10 +69,10 @@ def search():
     # defines some search settings
     search_settings = ccdc.search.Search.Settings()
     search_settings.has_3d_coordinates = True
-    search_settings.only_organometallic = True
+    #search_settings.only_organometallic = True
     search_settings.no_errors = True
-    search_settings.no_metals = False
-    search_settings.not_polymeric = False
+    #search_settings.no_metals = False
+    #search_settings.not_polymeric = False
 
     for i, entry in enumerate(csd_reader):
         attempts = i
@@ -89,8 +89,8 @@ def search():
                 try:
                     sgnum = str(crystal.spacegroup_number_and_setting[0])
                 except Exception as e:  # exception for e.g. EFASCO01,KECYBU15 & MTYHFB03 which doesn't return a sensible space group number
-                    with open('spgerrors.txt', 'w+') as outfile:
-                        outfile.write(str(crystal.identifier) + ': ' + str(e) + '\n')
+                    with open('errors.txt', 'a+') as outfile:
+                        outfile.write(str(crystal.identifier) + ' : SEARCH.search: ' + str(e) + '\n')
                     sgnum = 1
                     print('***Didnt get space group number from csd for', id, 'space group', sgold, 'setting to 1***')
                 if sgnum in pyropgs:
@@ -124,7 +124,7 @@ def run_top_an():
 
 
 def write_CSD_cif():
-    """Writes a cif as found in the database to Raw"""
+    """Writes a cif as found in the database to CSD folder"""
     CSD = ccdc.io.EntryReader('csd')  # now we collect some information on the entry to write to the results
     search_settings = ccdc.search.Search.Settings()  # defines some search settings, easy to add more/change, see full list in docs
     search_settings.has_3d_coordinates = True
@@ -185,4 +185,3 @@ if __name__ == '__main__':
     search()
     run_top_an()  #calls STRUCTURE.py
     write_raw_cif()
-
