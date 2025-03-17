@@ -9,6 +9,7 @@ import time
 import string
 import numpy as np
 import ast
+import SUPERIMPOSE
 
 # File set-up for running standalone. Otherwise, these are set by MASTER.py
 # region
@@ -100,9 +101,9 @@ primitive_elements = {
 	'1' : ['pg_1'],
 	'2' : ['pg_1bar', 'pg_2', 'pg_m'],
 	'3' : ['pg_3'],
-	'4' : ['pg_2upm', 'pg_222', 'pg_mm2', 'pg_4', 'pg_4bar', 'pg_4mm'],
+	'4' : ['pg_2upm', 'pg_222', 'pg_mm2', 'pg_4', 'pg_4bar'],
 	'6' : ['pg_3bar', 'pg_32', 'pg_3m', 'pg_6', 'pg_6bar'],
-	'8' : ['pg_mmm', 'pg_4upm', 'pg_422', 'pg_4bar2m'],
+	'8' : ['pg_mmm', 'pg_4upm', 'pg_422', 'pg_4mm', 'pg_4bar2m'],
 	'12': ['pg_3barm', 'pg_6upm', 'pg_622', 'pg_6mm', 'pg_6barm2', 'pg_23'],
 	'16': ['pg_4upmmm'],
 	'24': ['pg_6upmmm', 'pg_m3bar', 'pg_432', 'pg_4bar3m'],
@@ -250,7 +251,7 @@ def space_group_finder(spg):
 
 
 def aizu_allowed(old, new):
-	#Sam function to check if the transition found by FINDSYM is an full Aizu para-ferro transition
+	#Sam function to check if the transition found by FINDSYM is a full Aizu para-ferro transition
 	potentials = Aizu_transitions.get(old)
 	if potentials != None: #if loop included to prevent crash due to potentials being empty after space_group_finder fails
 		if new in potentials:
@@ -272,10 +273,8 @@ def clean_up(cif):
 	try:
 		total.remove('_atom_site_U_iso_or_equiv\n')     #sam added these two lines after 2022 upgrade. these weren't in cif files before upgrade I think
 		total.remove('_atom_site_thermal_displace_type\n')
-	except Exception as e:
-		with open('spgerrors.txt', 'w+') as outfile:
-			outfile.write(str(e) + '\n')
-		print("No thermal displacement lines or Unknown Error") #Sam added this line. except pass is bad practice, think of alternative
+	except ValueError:
+		print("No thermal displacement lines")
 		pass
 	cut2 = []  # must define it first in case something goes wrong
 	for i, line in enumerate(total):
@@ -484,6 +483,8 @@ def main():
 					outfile.close()
 				shutil.copy(cif, errant_out_dir)  # copies the top_an cif to a new directory
 				continue  # skips the rest of the code bc it won't function
+		else:
+			old_labels = []
 
 		with open(inp, 'w+') as outfile:  # this block runs the cif into 'findsym_cifinput' to get the .inp file
 			subprocess.call(['findsym_cifinput', cif], stdout=outfile)
@@ -592,6 +593,57 @@ def main():
 		with open('rss.txt', 'a+') as outfile:
 			outfile.write(ref_code + ' '+ str(overall_rss_C) + ' ' + str(overall_rss_P) + '\n')
 
+		#section here to check for tolerances hit
+		if topology_relabel:
+			dashed_lines = []
+			dashed_lines_num = 0
+			line_num = 0
+			tolerance_output = ""
+			for line in findsym_out:
+				if re.search('------------------------------------------', line):
+					dashed_lines_num += 1
+					dashed_lines.append(line_num)
+				line_num+=1
+			if dashed_lines_num == 3: #we've hit tolerances
+				for num in range(dashed_lines[0], dashed_lines[1]):
+					if findsym_out[num][0] == "A":
+						tolerance_line = findsym_out[num].strip()
+						new_label = old_labels[tolerance_line[0:3]]
+						tolerance_line = tolerance_line + " " + new_label
+						tolerance_output = tolerance_output + tolerance_line + '\n'
+			elif dashed_lines_num == 2: #we've not hit tolerances
+				pass
+			else:
+				with open('errors.txt', 'a+') as outfile:
+					outfile.write(str(molecule.identifier) + ' : SYMMETRY_DETECTION.tolerance_hitting: ' + str(e) + '\n')
+			print(tolerance_output)
+		else:
+			dashed_lines = []
+			dashed_lines_num = 0
+			line_num = 0
+			tolerance_output = ""
+			for line in findsym_out:
+				if re.search('------------------------------------------', line):
+					dashed_lines_num += 1
+					dashed_lines.append(line_num)
+				line_num += 1
+			if dashed_lines_num == 3:  # we've hit tolerances
+				for num in range(dashed_lines[0], dashed_lines[1]):
+					if findsym_out[num][0] == "t":
+						type_line = num
+				for num2 in range(type_line + 1, dashed_lines[1]):
+					tolerance_line = findsym_out[num2].strip()
+					new_label = tolerance_line[0:3]
+					tolerance_line = tolerance_line + " " + new_label
+					tolerance_output = tolerance_output + tolerance_line + '\n'
+			elif dashed_lines_num == 2:  # we've not hit tolerances
+				pass
+			else:
+				with open('errors.txt', 'a+') as outfile:
+					outfile.write(
+						str(molecule.identifier) + ' : SYMMETRY_DETECTION.tolerance_hitting: ' + str(e) + '\n')
+			print(tolerance_output)
+
 		with open(out, 'r') as infile:  # report output spacegroup and check for crashes
 			findsym_out = infile.readlines()
 		with open(findsym_cif, 'w+') as outfile:
@@ -614,7 +666,32 @@ def main():
 				shutil.copy(out, errant_out_dir)
 				continue
 
-		if old_sym_no != new_sym_no:  # adds entries that change to a results file
+		with open(cif, 'r') as infile:  # finds the old cell params
+			text_temp = infile.readlines()
+			for i, line in enumerate(text_temp):
+				if re.search('_cell_volume', line):
+					vol_in = line.split()[1]
+					vol_in = re.sub(r'\(.*?\)', "", vol_in)
+
+		with open(findsym_cif, 'r') as infile:  # finds the new cell params
+			text_temp2 = infile.readlines()
+			for i, line in enumerate(text_temp2):
+				if re.search('_cell_volume', line):
+					vol_out = line.split()[1]
+
+		#check if volume changes so spg --> spg transitions don't get lost
+		R_centred = [146, 148, 155, 160, 161, 166, 167]
+
+		vol_ratio = float(vol_in)/float(vol_out)
+		vol_100 = vol_ratio * 100
+		vol_round = int(round(vol_100,))
+		if old_sym_no in R_centred:
+			if old_sym_no == new_sym_no and str(vol_ratio)[:4] == "0.33":
+				vol_round = 100  #findsym changing cubic axes to hex axes counted as a volume change and thus a hit, this fixes
+
+
+
+		if old_sym_no != new_sym_no or vol_round not in range(95, 105):  # adds entries that change to a results file
 			print('This crystal has a higher symmetry form found by findsym')
 			print('Overall_rms_shift:',overall_rms,'Max_rms_shift:',max_rms,'Type:',max_type,'Original_type:',max_oldtype)
 			aizu_yes = ''
@@ -797,7 +874,6 @@ def main():
 				lines = infile.readlines()
 				important_lines = lines[5:(len(lines) - 1)]
 				infile.close()
-
 			for line in important_lines:
 				irrep = line.split()[0]
 				continuous_allowed = line.split()[1]
@@ -806,16 +882,13 @@ def main():
 					array = np.array(ast.literal_eval(matrix))
 					zeros = (np.count_nonzero(array == 0))
 					ones = (np.count_nonzero(array == 1) + np.count_nonzero(array == -1))
-
 					if zeros == 6 and ones == 3 and continuous_allowed in continuous_conditions:  # 2nd order FE phast transition needs to be at the GM point and so the matrix must only three 1's
 						continuous = True
 						break
 					else:
 						irrep = '-'
 						continuous = False
-				except ValueError as error:
-					with open('matrix_errors.txt', 'w+') as outfile:
-						outfile.write(str(crystal.identifier) + '   ' + str(error) + '\n')
+				except ValueError as error: # matrix is not purely 1's and 0's and is thus not continuous (in a ferroelectric sense anyway)
 					continue
 			new_elements = 0
 			old_elements = 0
@@ -831,7 +904,7 @@ def main():
 
 			#endregion
 
-			#Sam's new database output test - finished, just needs cleaning up
+			#Sam's new database output - finished
 
 			if interact_with_database == True:   #allows program to run without messing up the database if this is False
 				output_list = (ref_code, old_sgname, new_sgname, aizu_yes, continuous, irrep, ferro_axes, run_comments, name, formula, phase_transition, old_spg, new_spg, centro, overall_rss_C, overall_rss_P, overall_rms, max_rms, max_type, max_oldtype, atom_no, sym_group_no, str(temperature), str(melting), str(author), str(journal_name), journal_vol, page_no, year, doi, note, Z, Zprime, calc_density, a_in, b_in, c_in, al_in, be_in, ga_in, vol_in, a_out, b_out, c_out, al_out, be_out, ga_out, vol_out, float(vol_in)/float(vol_out), analogue, bioactivity, ccdc_number, colour, database, depositiondate, disorder, habit, organic, polymeric, powder, polymorph, pressure, r_factor, radiation, remarks, str(solvent), str(source), str(synonyms))
@@ -862,7 +935,10 @@ def main():
 						con.commit()
 						con.close()
 
-		elif old_sym_no == new_sym_no:  # to save space we delete all the files for irrelevant entries
+			if compare_cifs:
+				SUPERIMPOSE.main(ref_code)
+
+		else: #old_sym_no == new_sym_no:  # to save space we delete all the files for irrelevant entries
 			if delete_unchanged_cif_inp_out:
 				print('No new symmetries found, deleting unnecessary files')
 				os.remove(cif)
