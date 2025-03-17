@@ -5,7 +5,7 @@ import ccdc.molecule
 import ccdc.crystal
 import ccdc.search
 import ccdc.io
-import ccdc.conformer
+#import ccdc.conformer
 from ccdc.descriptors import MolecularDescriptors as MD
 from ccdc.descriptors import GeometricDescriptors as GD
 
@@ -53,10 +53,11 @@ def exclude(molecule, excluded, replace_type_by_c):
     return molecule
 
 
-# Sam's attempt at replacing replace_ABn_a. fixes a lot of issues with the previous iteration but has problems of it's own. Operating on the asymmetric unit means that some tetrahedrons will look like A-B2 rather than A-B4 for example and won't be simplified.
+# Sam's attempt at replacing replace_ABn_a. fixes a lot of issues with the previous iteration but has problems of its own. Operating on the asymmetric unit means that some tetrahedrons will look like A-B2 rather than A-B4 for example and won't be simplified.
 def sam_Abn_A(molecule, crystal, ABn_list, note):
     to_remove = []
     crystmol = crystal.molecule
+    crystmol.remove_hydrogens()
     for group in ABn_list:
         centre, bonded, cnum = group.split('_')
         for comp in crystmol.components:
@@ -84,7 +85,7 @@ def sam_Abn_A(molecule, crystal, ABn_list, note):
     return molecule, note
 
 
-# Sam's method for simplifying 18-crown-6. Only gains two entries and loses POXQUR as one crown is ona  special position
+# Sam's method for simplifying 18-crown-6. Only gains two entries and loses POXQUR as one crown is on a  special position. Currently not used in settings
 def simplify_crown(molecule, note, num_simplified):
     crown = Chem.MolFromSmiles('C1CCCCCCCCCCCCCCCCC1')
     for component in molecule.components:
@@ -125,7 +126,8 @@ def simplify_crown(molecule, note, num_simplified):
                     note = note + 'simplified crown'
                     #break
                 else:
-                    print('no')
+                    pass
+                    # print('no')
             except Exception as e:
                 print(e)
                 pass
@@ -161,7 +163,7 @@ def simplify_dabco(molecule, note, num_simplified):
     return molecule, note, num_simplified
 
 
-# Sam - removes items with methylpentane substructure
+# Sam - removes items with methyl-cyclopentane/methyl-cyclohexane substructure
 def simplify_MeCyclo(molecule, note, num_simplified):
     MeC5 = Chem.MolFromSmiles('CC1CCCC1')
     MeC6 = Chem.MolFromSmiles('CC(CCC1)CC1')
@@ -186,12 +188,147 @@ def simplify_MeCyclo(molecule, note, num_simplified):
                     new_mol.add_molecule(new_component)
                     molecule = new_mol
                     num_simplified += 1
+            except TypeError: # fails if smiles cannot be made
+                continue
             except Exception as e:
-                with open('mecyclo.txt', 'w+') as outfile:
-                    outfile.write(str(molecule.identifier) + ': ' + str(e) + '\n')
-                pass
+                with open('errors.txt', 'a+') as outfile:
+                    outfile.write(str(molecule.identifier) + ' : TOOLS.simplify_MeCyclo: ' + str(e) + '\n')
+                continue
     return molecule, note, num_simplified
 
+# Sam - moment of inertia based organic simplification
+def centroids(molecule, note, num_simplified):  # Sam's V2
+    MeC5 = Chem.MolFromSmiles('CC1CCCC1')
+    MeC6 = Chem.MolFromSmiles('CC(CCC1)CC1')
+    dabco = Chem.MolFromSmiles('C1CC2CCC1CC2')
+
+    for component in molecule.components:
+        if len(component.atoms) < 14:
+            reader = ccdc.io.CrystalReader('CSD')  # the next lines pick out the pure molecule from the database to avoid asymmetric unit only being part of a molecule. Also undoes any simplification to enable more accurate inertia values.
+            reader_molecule = reader.molecule('{}'.format(molecule.identifier))
+            carbons = 0
+            other_atoms = 0
+            for atom in component.atoms:
+                atom_remove = ['F', 'Cl', 'Br', 'I', 'P', 'O', 'N']
+                if atom.atomic_symbol == 'C':
+                    carbons += 1
+                if atom.atomic_symbol in atom_remove:
+                    other_atoms += 1
+            if carbons + other_atoms == len(component.atoms) and other_atoms != len(component.atoms):
+                for comp in reader_molecule.components:
+                    if comp.identifier == component.identifier:
+                        try:
+                            comp.add_hydrogens(mode='missing', add_sites=True)
+                        except RuntimeError:
+                            for atom in comp.atoms:  # prevents 'atom has no coordinates error'
+                                if atom.coordinates == None:
+                                    comp.remove_atom(atom)
+                            pass
+                        except Exception as e:
+                            with open('errors.txt', 'a+') as outfile:
+                                outfile.write(
+                                    str(molecule.identifier) + ' : TOOLS.sphericity(add hydrogens): ' + str(e) + '\n')
+                        mol_file = comp.to_string(
+                            format='mol2')  # csd doesn't output .xyz files so output and write out mol2 file
+                        if os.path.isfile('small_mols/mol/{}{}.mol2'.format(reader_molecule.identifier,
+                                                                            str(comp.identifier))) is False:
+                            with open('small_mols/mol/{}{}.mol2'.format(reader_molecule.identifier,
+                                                                        str(comp.identifier)), 'w+') as datafile:
+                                datafile.write(mol_file)
+                        else:
+                            with open('small_mols/mol/{}{}.mol2'.format(reader_molecule.identifier,
+                                                                        str(comp.identifier)), 'w+') as datafile:
+                                datafile.write(mol_file)
+                        try:
+                            iodata_mol = load_one('small_mols/mol/{}{}.mol2'.format(reader_molecule.identifier,
+                                                                                    str(comp.identifier)))  # these two lines us iodata module to convert mol2 to xyz and write out
+                            dump_one(iodata_mol, 'small_mols/xyz/{}{}.xyz'.format(reader_molecule.identifier,
+                                                                                  str(comp.identifier)))
+                            pymatgen_mol = mol_from_file(
+                                'small_mols/xyz/{}{}.xyz'.format(reader_molecule.identifier,
+                                                                 str(comp.identifier)))
+                            reo_mol = reoriented_molecule(pymatgen_mol)[0]
+                            rotation_matrix = reoriented_molecule(pymatgen_mol)[1].rotation_matrix
+                            reo_mol.to(filename='small_mols/reo/{}.json'.format(reader_molecule.identifier))
+                            x_inertia = get_moment_of_inertia(reo_mol, [1, 0, 0])
+                            y_inertia = get_moment_of_inertia(reo_mol, [0, 1, 0])
+                            z_inertia = get_moment_of_inertia(reo_mol, [0, 0, 1])
+                            spherocity_index = (3 * x_inertia) / (x_inertia + y_inertia + z_inertia)  # with weights
+
+                            with open('inertias.txt', 'a+') as outfile:
+                                outfile.write(molecule.identifier)
+                                outfile.write('\n')
+                                outfile.write('{} {} {}'.format(x_inertia, y_inertia, z_inertia))
+                            posns = []
+
+                            for atom in reo_mol.sites:
+                                atom_coord = []
+                                for coord in atom.coords:
+                                    atom_coord.append(coord)
+                                posns.append(atom_coord)
+                        except TypeError: # can't reorient molecule leading to False molecule
+                            break
+                        except Exception as e:
+                            with open('errors.txt', 'a+') as outfile:
+                                outfile.write(str(molecule.identifier) + ' : TOOLS.sphericity(inertia_calc): ' + str(e) + '\n')
+                            break
+                        if x_inertia < 3 and y_inertia < 3 and z_inertia < 5:  # removing water and ammonium
+                            new_mol = ccdc.molecule.Molecule(identifier='{}'.format(molecule.identifier))
+                            for comp2 in molecule.components:
+                                if comp2 != component:
+                                    new_mol.add_molecule(comp2)
+                            molecule = new_mol
+                            note = note + 'Removed {}; '.format(comp.formula)
+                            break
+
+                        for atom in comp.atoms:
+                            if atom.atomic_symbol in ['N', 'O']:
+                                atom.atomic_symbol = 'C'
+                            if atom.atomic_symbol in ['H', 'D']:
+                                comp.remove_atom(atom)
+                        smiles = comp.smiles
+                        overlap = ()
+                        overlap2 = ()
+                        overlap3 = ()
+                        try:
+                            mol = Chem.MolFromSmiles(smiles, sanitize=False)
+                            overlap = mol.GetSubstructMatch(dabco)
+                            if len(comp.atoms) < 9:
+                                overlap2 = mol.GetSubstructMatch(MeC5)
+                                overlap3 = mol.GetSubstructMatch(MeC6)
+                        except:
+                            pass
+
+
+                        if (0.9 <= spherocity_index <= 1.1) or overlap != () or overlap2 != () or overlap3 != ():
+                            centroid_coords = MD.atom_centroid(*tuple(a for a in comp.atoms))
+                            new_atomic_symbol = "He"
+                            central_atom_list = MD.AtomDistanceSearch(comp).atoms_within_range(point=centroid_coords,
+                                                                                               radius=0.5)  # is there an atom within 0.5 of centroid. Is so, should be left as central atom rather than helium.
+                            if central_atom_list:
+                                central_atom = central_atom_list[0]
+                                new_atomic_symbol = central_atom.atomic_symbol
+
+                            new_component = ccdc.molecule.Molecule(identifier='centroid')
+                            new_mol = ccdc.molecule.Molecule(identifier='{}'.format(molecule.identifier))
+                            atom = ccdc.molecule.Atom(atomic_symbol=new_atomic_symbol, atomic_number=2, coordinates=(
+                            centroid_coords[0], centroid_coords[1], centroid_coords[2]),
+                                                      label='He100{}'.format(str(num_simplified)))
+                            new_component.add_atom(atom)
+                            for comp2 in molecule.components:
+                                if comp2 != component:
+                                    new_mol.add_molecule(comp2)
+                            new_mol.add_molecule(new_component)
+                            note = note + 'Replaced spherical molecule {} with centroid; '.format(comp.formula)
+                            molecule = new_mol
+                            num_simplified += 1
+                            try:
+                                reo_mol.to(filename='small_mols/spheres/{}.xyz'.format(small_organics_molecule.identifier),
+                                       fmt='xyz')
+                            except:
+                                pass
+                            break
+    return (molecule, note, num_simplified)
 
 # Sam - moment of inertia based organic simplification
 def simplify_small_organics_inertial(molecule, note, num_simplified):  # Sam's V2
@@ -208,19 +345,19 @@ def simplify_small_organics_inertial(molecule, note, num_simplified):  # Sam's V
             if carbons + other_atoms == len(component.atoms) and other_atoms != len(component.atoms):
                 small_organics_reader = ccdc.io.CrystalReader('CSD')  # the next lines pick out the pure molecule from the database to avoid asymmetric unit only being part of a molecule. Also undoes any simplification to enable more accurate inertia values.
                 small_organics_molecule = small_organics_reader.molecule('{}'.format(molecule.identifier))
+
                 for comp in small_organics_molecule.components:
                     if comp.identifier == component.identifier:
                         try:  # incase adding hydrogens fails e.g. unknown bond type
                             comp.add_hydrogens(mode='missing', add_sites=True)
                         except RuntimeError:
-                            print('failed to add hydrogens')
                             for atom in comp.atoms:  # prevents 'atom has no coordinates error'
                                 if atom.coordinates == None:
                                     comp.remove_atom(atom)
                             pass
                         except Exception as e:
-                            with open('adding_hydrogens.txt', 'w+') as outfile:
-                                outfile.write(str(molecule.identifier) + ': ' + str(e) + '\n')
+                            with open('errors.txt', 'a+') as outfile:
+                                outfile.write(str(molecule.identifier) + ' : TOOLS.sphericity(add hydrogens): ' + str(e) + '\n')
                         mol_file = comp.to_string(format='mol2')  # csd doesn't output .xyz files so output and write out mol2 file
                         if os.path.isfile('small_mols/mol/{}{}.mol2'.format(small_organics_molecule.identifier, str(comp.identifier))) is False:
                             with open('small_mols/mol/{}{}.mol2'.format(small_organics_molecule.identifier, str(comp.identifier)), 'w+') as datafile:
@@ -252,38 +389,24 @@ def simplify_small_organics_inertial(molecule, note, num_simplified):  # Sam's V
                                     atom_coord.append(coord)
                                 posns.append(atom_coord)
                             posns2 = np.array(posns)
+                            if (len(component.atoms)) > 3:
+                                try:
+                                    globularity = sphericity(posns2, core=False)
+                                except Exception as error:
+                                    globularity = 1  # if globularity fails, just call it spherical and only sphericity will be accounted for
+                                    if "QH6154 Qhull precision error" in str(error):
+                                        continue
+                                    else:
+                                        with open('errors.txt', 'a+') as outfile:
+                                            outfile.write(str(molecule.identifier) + ' : TOOLS.sphericity(globularity): ' + str(error) + '\n')
+                            else:
+                                globularity = 1
 
-                            try:
-                                globularity = sphericity(posns2, core=False)
-                            except Exception as error:
-                                globularity = 0.1  # if globularity fails, just call it spherical and only sphericity will be accounted for
-                                print(error)
-
-                        except Exception as e:
-                            with open('sphericity', 'a+') as out:
-                                out.write(str(molecule.identifier) + ': pymatgen error --> {}\n'.format(e))
-                            print('pymatgen error')
-                            print(e)
+                        except TypeError: # can't reorient molecule leading to False molecule
                             break
-                        try:
-                            pyx_mol = pyxtal_molecule(reo_mol)
-                            box = pyx_mol.get_box(padding=0)
-                            box_length = box.length
-                        except ValueError as err:  # converting to pyx mol sometimes fails for ammonium
-                            # print(traceback.format_exc())
-                            atoms = []
-                            for atom in comp.atoms:
-                                atoms.append(atom.atomic_symbol)
-                                if atoms == ['N', 'H', 'H', 'H', 'H']:
-                                    new_mol = ccdc.molecule.Molecule(identifier='{}'.format(molecule.identifier))
-                                    for comp2 in molecule.components:
-                                        if comp2 != component:
-                                            new_mol.add_molecule(comp2)
-                                    molecule = new_mol
-                                    note = note + 'Removed {}; '.format(comp.formula)
-                                    break
-                            with open('pymat_errs.txt', 'a+') as out:
-                                out.write(str(molecule.identifier) + ': pyxtal error\n')
+                        except Exception as e:
+                            with open('errors.txt', 'a+') as outfile:
+                                outfile.write(str(molecule.identifier) + ' : TOOLS.sphericity(inertia_calc): ' + str(e) + '\n')
                             break
 
                         if x_inertia < 3 and y_inertia < 3 and z_inertia < 5:  # removing water and ammonium
@@ -311,8 +434,9 @@ def simplify_small_organics_inertial(molecule, note, num_simplified):  # Sam's V
                                 num_simplified += 1
                                 reo_mol.to(filename='small_mols/spheres/{}.xyz'.format(small_organics_molecule.identifier), fmt='xyz')
                                 break
-                            except:
-                                pass
+                            except Exception as e:
+                                with open('errors.txt', 'a+') as outfile:
+                                    outfile.write(str(molecule.identifier) + ' : TOOLS.sphericity(centroid): ' + str(e) + '\n')
                         else:
                             reo_mol.to(filename='small_mols/not_spheres/{}.xyz'.format(small_organics_molecule.identifier),
                                        fmt='xyz')
@@ -333,14 +457,20 @@ def m_x_test(molecule, crystal, note):
             has_halide = True
 
     if has_metal == True and has_halide == True:  # if is_organometallic didn't work for magnesium containing NIWZIE so doing this instead
-        contacts = crystal.contacts(intermolecular='Any', path_length_range=(0, 3), distance_range=(-3.5,
-                                                                                                    0))  # creates a list of crystallographic contacts. I believe distance_range means contacts up to 3.5 angstroms apart, documentation isn't particularly clear
+        contacts = []
+        try:
+            contacts = crystal.contacts(intermolecular='Any', path_length_range=(0, 3), distance_range=(-3.5, 0))  # creates a list of crystallographic contacts. I believe distance_range means contacts up to 3.5 angstroms apart, documentation isn't particularly clear
+        except RuntimeError: # bond already exists
+            pass
+        except Exception as e:
+            with open('errors.txt', 'a+') as outfile:
+                outfile.write(str(molecule.identifier) + ' : TOOLS.m_x(read): ' + str(e) + '\n')
+            pass
         # measuring contacts adds a significant amount of processing time.
         metalloids = ['Sb']  # more could be added, e.g. As. only examples in known_ferros contained Sb
         m_x_contacts = []
         for cont in contacts:
-            if cont.atoms[0].is_metal or cont.atoms[
-                0].atomic_symbol in metalloids:  # next bit checks contact is between halide and metal. doubled up for M-X or X-M bond. probably a cleaner way to do this.
+            if cont.atoms[0].is_metal or cont.atoms[0].atomic_symbol in metalloids:  # next bit checks contact is between halide and metal. doubled up for M-X or X-M bond. probably a cleaner way to do this.
                 if cont.atoms[1].atomic_symbol in halides:
                     contact = [cont.atoms[0], cont.atoms[1]]
                     m_x_contacts.append(contact)
@@ -365,13 +495,17 @@ def m_x_test(molecule, crystal, note):
                 elif atom.label == atom2:
                     atom2 = atom
             molecule.add_bond('Single', atom1, atom2)
-        except Exception as e:  # should write these out at somepoint to check nothing major is wrong
+        except RuntimeError: # bond already exists
+            continue
+        except Exception as e:
+            with open('errors.txt', 'a+') as outfile:
+                outfile.write(str(molecule.identifier) + ' : TOOLS.m_x(write): ' + str(e) + '\n')
             pass
             # print(e)KIGSAV
     return (molecule, note)
 
 
-# ------------Pymatgen------------------ functions found online, not sure if they're still be used above
+# ------------Pymatgen------------------ functions found online, leaving here in case used above
 
 def mol_from_file(fname):
     """
@@ -386,10 +520,12 @@ def mol_from_file(fname):
     """
     try:
         return Molecule.from_file(fname)
-    except:
-        print("Error: could not import file " + str(fname) + " to Molecule.\n"
-              + "Default supported formats are xyz, gaussian and pymatgen JSON molecules.\n"
-              + "Installing openbabel allows for more extensions.")
+    except Exception as e:
+        #print("Error: could not import file " + str(fname) + " to Molecule.\n"
+        #      + "Default supported formats are xyz, gaussian and pymatgen JSON molecules.\n"
+        #      + "Installing openbabel allows for more extensions.")
+        with open('errors.txt', 'a+') as outfile:
+            outfile.write(str(molecule.identifier) + ' : TOOLS.sphericity(molfromfile): ' + str(e) + '\n')
         return
 
 def get_inertia_tensor(mol):
