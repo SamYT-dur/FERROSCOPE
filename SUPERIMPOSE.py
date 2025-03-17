@@ -14,17 +14,22 @@ def main(refcode):
     csd_reader = EntryReader('CSD') #find spacegroup
     entry = csd_reader.entry(refcode)
     spg = entry.crystal.spacegroup_symbol
-    bad_list = ['P31c', 'R3m', 'R3'] #sometimes fail when reading into pymatgen: Some occupancies ([1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]) sum to > 1! If they are within the occupancy_tolerance, they will be rescaled. The current occupancy_tolerance is set to: 1.0 Species occupancies sum to more than 1!
-    if spg in bad_list: #fixes some of the issues by reading into pyxtal first. i think the problem is multiple atoms on one site
+    #bad_list = ['P31c', 'R3m', 'R3', 'R3c', 'R-3m'] #sometimes fail when reading into pymatgen: Some occupancies ([1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]) sum to > 1! If they are within the occupancy_tolerance, they will be rescaled. The current occupancy_tolerance is set to: 1.0 Species occupancies sum to more than 1!
+    try:
+    #    if spg in bad_list: #fixes some of the issues by reading into pyxtal first. i think the problem is multiple atoms on one site
         pyx_struc = pyxtal()
-        pyx_struc.from_seed('MasterOutputs/CSD_cifs/{}.cif'.format(refcode))
+        pyx_struc.from_seed('OutputCIFs/CSD/{}.cif'.format(refcode))
         low_struc = pyx_struc.to_pymatgen()
-    else: #this is how it should run without errors. All other space groups seem fine for now. not definitive
-        low_struc = Structure.from_file('MasterOutputs/CSD_cifs/{}.cif'.format(refcode), merge_tol=0.01) #can also compare to simplified cifs using 'MasterOutputs/Top/{}_top.cif' as string.
-    high_struc = Structure.from_file('MasterOutputs/Findsym_cifs/{}_top_findsym.cif'.format(refcode))
-    new_struc = Structure.from_sites(low_struc.sites)
+        #else: #this is how it should run without errors. All other space groups seem fine for now. not definitive
+            #low_struc = Structure.from_file('OutputCIFs/CSD/{}.cif'.format(refcode), merge_tol=0.01) #can also compare to simplified cifs using 'MasterOutputs/Top/{}_top.cif' as string.
+        high_struc = Structure.from_file('OutputCIFs/Output/{}_top_findsym.cif'.format(refcode))
+        new_struc = Structure.from_sites(low_struc.sites)
+    except Exception as error:
+        with open('errors.txt', 'a+') as outfile:
+            outfile.write(str(refcode) + ' : SUPERIMPOSE(cif parsing): ' + str(error) + '\n')
+        return
 
-    with open('MasterOutputs/Findsym_cifs/{}_top_findsym.cif'.format(refcode)) as infile:
+    with open('OutputCIFs/Output/{}_top_findsym.cif'.format(refcode)) as infile:
         lines = infile.readlines()
         for i, line in enumerate(lines):
             if re.search('Origin', line):
@@ -66,12 +71,12 @@ def main(refcode):
         new_struc.append(species, coords, coords_are_cartesian=False)
 
     a = CifWriter(new_struc)
-    a.write_file('MasterOutputs/Compare_cifs/{}_comp.cif'.format(refcode))
+    a.write_file('OutputCIFs/Superimpose/{}_comp.cif'.format(refcode))
 
 
 if __name__ == '__main__':
     with open('compcif_errors.txt', 'w+') as outfile:
-        for file in os.listdir('MasterOutputs/Findsym_cifs'):
+        for file in os.listdir('OutputCIFs/Output'):
             filename = os.fsdecode(file)
             refcode = filename.strip('_top_findsym.cif')
            #try:
