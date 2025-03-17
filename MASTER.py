@@ -1,24 +1,34 @@
-# Master script that runs all other parts of the CSD search program
+# Master script that runs all other parts of FERROSCOPE
 # Type "ccdcpython" in shell then "python MASTER.py"
 
 import os
+#import sys
 import glob
 import time
 import datetime
 import SEARCH
 import SYMMETRY_DETECTION
 import STRUCTURE
+import TOOLS
 import sqlite3
 import SUPERIMPOSE
+
+
 
 start = time.time()
 run_version = datetime.datetime.now()
 run_version = run_version.strftime("%d" + '/' + "%m" + '/' + "%Y")
 print(run_version)
 
+# To clean commandline output of certain errors - #turn off for debugging
+#sys.stderr = object
+
 # Create and define cif directories
 # region
 # Subroutines may define these differently to be able to use them standalone
+
+with open('errors.txt', 'w+') as outfile: # clean errors file
+	outfile.close()
 
 directories = ['OutputCIFs', 'OutputCIFs/Raw', 'OutputCIFs/CSD', 'OutputCIFs/Modified', 'OutputCIFs/Output', 'OutputCIFs/Misc', 'OutputCIFs/Superimpose', 'OutputCIFs/Errant', 'small_mols']
 for directory in directories:
@@ -43,7 +53,7 @@ SEARCH.notes_file = 'OutputCIFs/process_notes.txt'
 SEARCH.out_dir = raw_out_dir
 SEARCH.CSD_out_dir = CSD_out_dir
 SEARCH.top_an_out_dir = top_out_dir
-SUPERIMPOSE.comp_out_dir = comp_out_dir   # Sam - directory used in compcif3
+SUPERIMPOSE.comp_out_dir = comp_out_dir   #directory used in SUPERIMPOSE
 
 small_mols_directories = ['mol', 'xyz', 'reo', 'spheres', 'not_spheres']
 for directory in small_mols_directories:
@@ -138,7 +148,7 @@ else:
 # region
 # ->1. delete old files set to True or False; delete unchanged cif and inp/out files set to True or False; write out table of shifts set to True or false
 delete_old_files = True
-delete_unchanged_cif_inp_out = False
+delete_unchanged_cif_inp_out = True
 output_shifts = True
 
 # ->2. do the CSD search to extract cifs or just run existing files; for preexisting files set up the name for the topolgically labelled or raw cifs here
@@ -153,18 +163,21 @@ top_processed = True  # go through STRUCTURE.py
 # ->4. Sam rewrote ABn_a called sam_Abn_a in csdtools due to old script seeing any A connected to any 4B. Simplified FeCl5 for example and catena structures.
 replace_type_by_c = ['N', 'O']  # atoms that get changed to C because they'll be similar in size and could disorder
 excluded_atoms = ['H', 'D']  # atoms to delete before symmetry analysis etc
-ABn_list = ['C_Cl_3', 'C_F_3', 'C_Br_3', 'Cl_O_4', 'Br_O_4', 'I_O_4', 'S_O_4', 'Cl_C_4', 'Br_C_4', 'I_C_4', 'B_F_4', 'B_H_4', 'Fe_Cl_4', 'Fe_Cl_5', 'Fe_Br_4', 'Re_O_4', 'Re_C_4', 'Ga_Cl_4', 'Mn_Br_4', 'Mn_Cl_4', 'Zn_Cl_4', 'Cu_Cl_4', 'Co_Cl_4', 'Al_Cl_4', 'Tl_Cl_4', 'Be_Cl_4', 'Cd_Cl_4', 'Zn_Br_4', 'Co_Br_4', 'Al_Br_4', 'Hg_Br_4', 'Ga_Br_4', 'Zn_I_4', 'Hg_I_4', 'In_I_4', 'Al_I_4']  # groups that likely to be disordered so B atoms removed - Sam -expanded by me, there could be more
+ABn_list = ['P_C_4', 'Cl_C_4', 'P_C_4', 'C_Cl_3', 'C_F_3', 'C_Br_3', 'Br_C_4', 'I_C_4', 'S_C_4', 'Se_C_4', 'B_F_4', 'B_H_4', 'Fe_Cl_4', 'Fe_Cl_5', 'Fe_Br_4', 'Re_C_4', 'Ga_Cl_4', 'Mn_Br_4', 'Mn_Cl_4', 'Zn_Cl_4', 'Cu_Cl_4', 'Co_Cl_4', 'Al_Cl_4', 'Tl_Cl_4', 'Be_Cl_4', 'Cd_Cl_4', 'Zn_Br_4', 'Co_Br_4', 'Al_Br_4', 'Hg_Br_4', 'Ga_Br_4', 'Zn_I_4', 'Hg_I_4', 'In_I_4', 'Al_I_4']  # groups that likely to be disordered so B atoms removed - Sam -expanded by me, there could be more
 topology_relabel = True  # this chooses whether to use topology labelling or not
-# which strucutre corrections to apply
-STRUCTURE.excluded = True	#replace type by C and remove H's
-STRUCTURE.sphericity = True #simplify pseudo-spherical molecules
-STRUCTURE.MeCyclo = True #simplify methylcyclopentance and mecyclohexane
-STRUCTURE.m_x_bonds = False #measure metal-halogen bonds longer than as defined in mercury (up to 3.5 A). Adds significant computational time
+# which structure corrections to apply
+STRUCTURE.excluded_check = True	#replace type by C and remove H's
+STRUCTURE.sphericity = False #simplify pseudo-spherical molecules # now handled by centroids below
+STRUCTURE.MeCyclo = False #simplify methylcyclopentance and mecyclohexane
+STRUCTURE.m_x_bonds = True #measure metal-halogen bonds longer than as defined in mercury (up to 3.5 A). Adds significant computational time
 STRUCTURE.tds = True #tetrahedrons not simplified by sphericity, handled here
 
-
+STRUCTURE.centroids = True
+TOOLS.sphericity = True
+TOOLS.MeCyclo = True
+TOOLS.dabco = True
 # ->5. set which entries in CSD to search and add to hit_list here; use 2000000 to search everything 0 to just use hit_list defined below.  Can search every nth entry if wanted
-SEARCH.highest_entry = 0
+SEARCH.highest_entry = 2000000
 SEARCH.nth_entry = 1
 
 # ->6. pre-populate the hit_list here.  If the list is empty, just search database according to section 5 instructions.
@@ -173,7 +186,6 @@ with open('good_ferros.gcd') as infile:
 	gcd_list = infile.readlines()
 	gcd_list = [x.strip() for x in gcd_list]
 SEARCH.hit_list = gcd_list
-#SEARCH.hit_list = ['JOJYOY']
 print('Preset hit list is', SEARCH.hit_list)
 
 # ->7. process pyroelectric pointgroups or all non-centrosymmetric: edit SEARCH.py around line 117
@@ -181,14 +193,14 @@ print('Preset hit list is', SEARCH.hit_list)
 # ->8. make false to just do the search and skip running findsym
 do_run_fs = True
 
-# ->9. set findsym tolerances here; they default otherwise - Sam never messed with these
+# ->9. set findsym tolerances here; they default otherwise - Sam's tolerance testing confirmed these were the best values
 SYMMETRY_DETECTION.lat_tol = 1.5   # latticeTolerance for cell parameters 1.5 optimal
 SYMMETRY_DETECTION.atom_tol = 1.8  # atomicPositionTolerance 1.8 optimal
 SYMMETRY_DETECTION.atom_rel_tol = 0.999  # atomicPositionMaxTolerance atom tolerance relative to shortest A - A distance if atom_tol is too large i.e. min(atom_tol,atom_rel_tol*shortest_NN_dist) 0.999
 
 # ->10. Set whether to interact with the database or not. Setting to false will still produce an excel file of results - Sam
-interact_with_database = False
-new_table = True   # if the interact is true and new table is false then the master table will be updated with new hits
+interact_with_database = True
+new_table = False   # if the interact is true and new table is false then the master table will be updated with new hits
 new_table_name = 'TestTable2'  # uncomment and name if new_table is true. make sure name doesn't already exist in the database or will crash
 #SYMMETRY_DETECTION.new_table_name = new_table_name  # uncomment if new_table is true
 
@@ -215,6 +227,7 @@ SYMMETRY_DETECTION.errant_out_dir = errant_out_dir
 SYMMETRY_DETECTION.delete_unchanged_cif_inp_out = delete_unchanged_cif_inp_out
 SYMMETRY_DETECTION.topology_relabel = topology_relabel
 SYMMETRY_DETECTION.output_shifts = output_shifts
+SYMMETRY_DETECTION.compare_cifs = compare_cifs
 
 if delete_old_files:
 	for item in glob.iglob('OutputCIFs/*/*'):
@@ -331,24 +344,9 @@ else:
 if do_run_fs:
 	SYMMETRY_DETECTION.main()
 
-# Superimpose high-symmetry structure onto low-symmetry cif
-
-if compare_cifs:
-	with open('compcif_errors.txt', 'w+') as outfile:
-		for file in os.listdir(cif_out_dir):
-			try:
-				filename = os.fsdecode(file)
-				refcode = filename.strip('_top_findsym.cif')
-				SUPERIMPOSE.main(refcode)
-			except Exception as e:
-				outfile.write(str(refcode)+ ': ' + str(e) + '\n')
-				continue
-
 end = time.time()
 
 #with open('OutputCIFS/Results.csv', 'a') as outfile:
 	#outfile.write('Script took '+str(end-start)+' seconds\n')
 
 print('Script took '+str(end-start)+' seconds')
-
-
