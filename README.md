@@ -1,5 +1,5 @@
 # FERROSCOPE
-Depository for the Evans group ferroelectric search program using the CSD Python API. 
+Repository for the Evans group ferroelectric search program using the CSD Python API. 
 
 Every polar entry from the CSD is considered as a potential ferroelectric material.\
 Structural modifications are made to each. \
