@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------------
+#!/usr/bin/env python
+#
+# This script can be used for any purpose without limitation subject to the
+# conditions at https://www.ccdc.cam.ac.uk/Community/Pages/Licences/v2.aspx
+#
+# This permission notice and the following statement of attribution must be
+# included in all copies or substantial portions of this script.
+#
+# 2025-04-24: created by the Cambridge Crystallographic Data Centre
+#
+"""
+Credit - This code was written by Sam Y. Thompson, Jason C. Cole and John S. Evans
+"""
+# -------------------------------------------------------------------------------------------------------
 # script for topological labelling of molecules to find equivalent atoms
 
 import sys
