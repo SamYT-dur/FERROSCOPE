@@ -12,7 +12,7 @@ A side effect of FERROSCOPE lead us to identify some CSD structures reported in 
 /PSTG_ONLY contains a stripped down version of FERROSCOPE for those only interested in erroneous space group choice in the CSD with adjusted tolerances more appropriate for this purpose.
 
 ## Installation
-* Download and install the CSD Python API. FERROSCOPE was tested on the Sep24 version.
+* Download and install the CSD Python API. FERROSCOPE was tested on the Sep24 version. "good_ferros.gcd" is required to run the scripts
 * Use pip to install extra packages: pymatgen, pyxtal, qc-iodata, stopit, rdkit, miniball, gemmi. Installing these should install all other dependecies e.g. numpy/scipy.
 * Install ISOTROPY Linux suite to get FINDSYM locally: https://stokes.byu.edu/iso/isolinux.php
 * Ensure both CSD python API and ISOTROPY are referenced in bashrc. e.g. "export ISODATA=/home/user/iso/" and "alias ccdcpython='source /home/user/CCDC/ccdc-software/csd-python-api/miniconda/bin/activate'"
