@@ -9,7 +9,7 @@ Successful entries are stored in an sqlite database.
 Article currently in review.
 
 A side effect of FERROSCOPE lead us to identify some CSD structures reported in the wrong space group (PSTG) a la Marsh et al., Acta Cryst. (2002). B58, 62-77 and Brock, Acta Cryst. (2022). B78, 576-588\
-/PSTG_ONLY contains a stripped down version of findsym for those only interested in erroneous space group choice in the CSD.
+/PSTG_ONLY contains a stripped down version of FERROSCOPE for those only interested in erroneous space group choice in the CSD with adjusted tolerances more appropriate for this purpose.
 
 ## Installation
 * Download and install the CSD Python API. FERROSCOPE was tested on the Sep24 version.
