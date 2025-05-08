@@ -4,7 +4,7 @@ Repository for the Evans group ferroelectric search program using the CSD Python
 Every polar entry from the CSD is considered as a potential ferroelectric material.\
 Structural modifications are made to each. \
 A higher-symmetry structure is searched for using FINDSYM.\
-Successful entries are stored in an sqlite database.
+Successful entries are stored in an sqlite database, which can be found here for searches on all polar and non-polar structures.
 
 Article currently in review.
 
