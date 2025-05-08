@@ -1,4 +1,6 @@
-# FERROSCOPE
+
+![logo](https://github.com/user-attachments/assets/a53cb90c-51e4-4f6d-888f-6bfad28669d1)
+
 Repository for the Evans group ferroelectric search program using the CSD Python API. Only works on Linux.
 
 Every polar entry from the CSD is considered as a potential ferroelectric material.\
