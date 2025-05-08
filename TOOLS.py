@@ -218,6 +218,10 @@ def centroids(molecule, note, num_simplified):  # Sam's V2
                 for comp in reader_molecule.components:
                     if comp.identifier == component.identifier:
                         try:
+                            for atom in comp.atoms: #remove dueterium atoms
+                                label = atom.label
+                                if label.startswith('D') and label[1].isdigit():
+                                    comp.remove_atom(atom)
                             comp.add_hydrogens(mode='missing', add_sites=True)
                         except RuntimeError:
                             for atom in comp.atoms:  # prevents 'atom has no coordinates error'
