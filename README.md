@@ -6,7 +6,7 @@ Structural modifications are made to each. \
 A higher-symmetry structure is searched for using FINDSYM.\
 Successful entries are stored in an sqlite database, which can be found here for searches on all polar and non-polar structures.
 
-Article currently in review.
+Publication currently under review.
 
 A side effect of FERROSCOPE lead us to identify some CSD structures reported in the wrong space group (PSTG) a la Marsh et al., Acta Cryst. (2002). B58, 62-77 and Brock, Acta Cryst. (2022). B78, 576-588.
 
