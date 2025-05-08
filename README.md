@@ -25,7 +25,7 @@ A side effect of FERROSCOPE lead us to identify some CSD structures reported in 
 * Command line. To run type "ccdcpython" to activate CSD Python API.
 * "python MASTER.py" should begin the search. Options may pop up to the user depending on settings.
  
-## code structure
+## Code structure
 MASTER.py \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--> SEARCH.py \
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--> STRUCTURE.py\
